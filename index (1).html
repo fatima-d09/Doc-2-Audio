@@ -1,0 +1,1100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Doc 2 Audio · Starlight Reader</title>
+<meta name="description" content="Drop a PDF, Word, TXT or Markdown file into the night sky and listen to it read aloud.">
+<meta name="theme-color" content="#070618">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 5 5' shape-rendering='crispEdges'%3E%3Crect x='2' width='1' height='5' fill='%23ffcf5a'/%3E%3Crect y='2' width='5' height='1' fill='%23ffcf5a'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Jersey+10&family=Pixelify+Sans:wght@400;500;600;700&family=VT323&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #ece9ff;
+    --dim: #a29cdb;
+    --muted: #6f68ad;
+    --panel: rgba(9, 7, 30, 0.84);
+    --panel-2: #17113f;
+    --edge: #5b4fc4;
+    --edge-hi: #a18fff;
+    --gold: #ffcf5a;
+    --cyan: #7fe0ff;
+    --rose: #ff7a8a;
+    --night: #1a1033;
+    --u: 4px;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #070618; color: var(--ink); }
+  body {
+    font-family: "VT323", ui-monospace, "Courier New", monospace;
+    font-size: 22px;
+    line-height: 1.3;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  #sky {
+    position: fixed; inset: 0; width: 100vw; height: 100vh;
+    image-rendering: pixelated; image-rendering: crisp-edges;
+    z-index: 0;
+  }
+  .wrap {
+    position: relative; z-index: 1;
+    max-width: 760px; margin: 0 auto;
+    padding: clamp(32px, 9vh, 88px) 16px 32vh;
+  }
+
+  /* Pixel border: four offset copies leave the corners notched */
+  .pix {
+    box-shadow:
+      0 var(--u) 0 0 var(--edge),
+      0 calc(-1 * var(--u)) 0 0 var(--edge),
+      var(--u) 0 0 0 var(--edge),
+      calc(-1 * var(--u)) 0 0 0 var(--edge);
+  }
+
+  /* Title */
+  h1 {
+    font-family: "Jersey 10", "Pixelify Sans", monospace;
+    font-size: clamp(48px, 10vw, 80px);
+    font-weight: 400;
+    letter-spacing: 2px;
+    line-height: 1.2;
+    margin: 0 0 18px;
+    color: #fff6dc;
+    text-shadow: 3px 3px 0 #3a1d78, 0 0 24px rgba(255, 207, 90, 0.3);
+    display: flex; align-items: center; gap: 22px;
+  }
+  .tag { color: var(--dim); margin: 0 0 34px; max-width: 36ch; }
+
+  /* Pixel star made from box-shadows */
+  .pstar {
+    --s: 4px;
+    width: var(--s); height: var(--s); flex: none;
+    background: #fff;
+    margin: calc(var(--s) * 2);
+    box-shadow:
+      var(--s) 0 var(--gold), calc(-1 * var(--s)) 0 var(--gold),
+      0 var(--s) var(--gold), 0 calc(-1 * var(--s)) var(--gold),
+      calc(var(--s) * 2) 0 rgba(255, 207, 90, .45), calc(var(--s) * -2) 0 rgba(255, 207, 90, .45),
+      0 calc(var(--s) * 2) rgba(255, 207, 90, .45), 0 calc(var(--s) * -2) rgba(255, 207, 90, .45);
+    animation: twinkle 1.8s steps(2, jump-none) infinite;
+  }
+  .pstar.lg { --s: 6px; }
+  @keyframes twinkle { 50% { opacity: .55; transform: scale(.85); } }
+
+  /* Panels */
+  .panel { background: var(--panel); margin: var(--u) var(--u) 28px; }
+
+  /* Drop zone */
+  .drop {
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    padding: 44px 18px 40px; text-align: center; cursor: pointer;
+    transition: background .15s;
+  }
+  .drop:hover, .drop.over { background: rgba(28, 20, 78, .92); --edge: var(--edge-hi); }
+  .drop.over { --edge: var(--gold); }
+  .drop-main { font-family: "Pixelify Sans", "VT323", monospace; font-size: 24px; font-weight: 600; letter-spacing: 2px; color: #fff6dc; line-height: 1.3; }
+  .drop-sub { color: var(--dim); font-size: 20px; }
+  .drop.compact { flex-direction: row; justify-content: center; padding: 14px 16px; gap: 16px; }
+  .drop.compact .drop-sub { display: none; }
+  .drop.compact .drop-main { font-size: 18px; }
+  .drop.compact .pstar { --s: 3px; }
+
+  .status { min-height: 1.4em; color: #c4bdff; margin: -10px var(--u) 22px; font-size: 21px; }
+  .status.error { color: var(--rose); }
+  .status:empty { display: none; }
+
+  /* Player */
+  .player { padding: 22px 22px 22px; }
+  .cons-head { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; }
+  .label { font-family: "Pixelify Sans", "VT323", monospace; font-size: 14px; font-weight: 500; color: var(--cyan); letter-spacing: 3px; }
+  h2 {
+    font-family: "Pixelify Sans", "VT323", monospace; font-weight: 600;
+    font-size: clamp(22px, 4.4vw, 30px); line-height: 1.25; letter-spacing: 1px;
+    margin: 10px 0 4px; color: #fff6dc; word-break: break-word;
+  }
+  .meta { color: var(--dim); font-size: 19px; }
+  #cons {
+    display: block; width: 100%; height: 90px;
+    image-rendering: pixelated; image-rendering: crisp-edges;
+    margin: 16px 0 6px; touch-action: manipulation;
+  }
+  .meta-row { display: flex; justify-content: space-between; gap: 10px; color: var(--dim); font-size: 19px; }
+
+  /* Buttons */
+  .btn {
+    font-family: "Pixelify Sans", "VT323", monospace; font-size: 16px; font-weight: 600; letter-spacing: 2px;
+    color: var(--ink); background: var(--panel-2); border: 0; padding: 10px 12px;
+    cursor: pointer; margin: var(--u); flex: none;
+    transition: background .12s;
+  }
+  .btn:hover { background: #251b62; --edge: var(--edge-hi); }
+  .btn:active { transform: translateY(2px); }
+  .btn svg { width: 22px; height: 22px; display: block; fill: currentColor; shape-rendering: crispEdges; }
+  .btn.icon { width: 54px; height: 54px; padding: 0; display: grid; place-items: center; }
+  .btn.play { width: 76px; height: 76px; background: var(--gold); color: var(--night); --edge: #fff1c2; }
+  .btn.play:hover { background: #ffdc80; }
+  .btn.play svg { width: 30px; height: 30px; }
+  .transport { display: flex; justify-content: center; align-items: center; gap: 16px; margin: 18px 0 24px; }
+
+  /* Settings */
+  .settings {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 18px 26px; padding-top: 22px;
+    background: repeating-linear-gradient(90deg, var(--edge) 0 4px, transparent 4px 12px) top / 100% 4px no-repeat;
+  }
+  .field { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .field.full { grid-column: 1 / -1; }
+  .field > span {
+    font-family: "Pixelify Sans", "VT323", monospace; font-size: 14px; font-weight: 500; letter-spacing: 2px;
+    color: var(--cyan); display: flex; justify-content: space-between;
+  }
+  .field output { color: var(--gold); }
+  .select-wrap { position: relative; margin: var(--u); }
+  .select-wrap::after {
+    content: ""; position: absolute; right: 14px; top: 50%; width: 4px; height: 4px; margin-top: -4px;
+    background: var(--gold); pointer-events: none;
+    box-shadow: -4px -4px var(--gold), 4px -4px var(--gold), -8px -8px var(--gold), 8px -8px var(--gold), 0 0 var(--gold);
+    transform: translateY(6px);
+  }
+  select {
+    appearance: none; -webkit-appearance: none; width: 100%;
+    font: inherit; font-size: 20px; color: var(--ink);
+    background: #0e0a2c; border: 0; border-radius: 0; padding: 8px 40px 8px 12px; cursor: pointer;
+  }
+  select option { background: #0e0a2c; color: var(--ink); }
+
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 24px;
+    background: transparent; cursor: pointer; margin: 0; --fill: 50%;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 8px;
+    background: linear-gradient(90deg, var(--cyan) 0 var(--fill), #2a2166 var(--fill) 100%);
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 16px; height: 16px; margin-top: -4px;
+    background: var(--gold); border: 0; border-radius: 0; box-shadow: 0 0 0 4px var(--night);
+  }
+  input[type="range"]::-moz-range-track { height: 8px; background: #2a2166; border: 0; }
+  input[type="range"]::-moz-range-progress { height: 8px; background: var(--cyan); }
+  input[type="range"]::-moz-range-thumb {
+    width: 16px; height: 16px; background: var(--gold); border: 0; border-radius: 0; box-shadow: 0 0 0 4px var(--night);
+  }
+
+  .check { display: flex; align-items: center; gap: 12px; cursor: pointer; color: var(--dim); align-self: end; padding-bottom: 2px; }
+  .check input {
+    appearance: none; -webkit-appearance: none; width: 22px; height: 22px; margin: 3px;
+    background: #0e0a2c; display: grid; place-items: center; cursor: pointer; --u: 3px;
+  }
+  .check input:checked::after { content: ""; width: 10px; height: 10px; background: var(--gold); }
+
+  /* Reader */
+  .reader {
+    padding: 24px 26px; max-height: 56vh; overflow-y: auto;
+    font-size: 24px; line-height: 1.45;
+    scrollbar-width: thin; scrollbar-color: var(--edge) transparent;
+  }
+  .reader::-webkit-scrollbar { width: 8px; }
+  .reader::-webkit-scrollbar-thumb { background: var(--edge); }
+  .reader p { margin: 0 0 .8em; }
+  .page-mark {
+    font-family: "Pixelify Sans", "VT323", monospace; font-size: 13px; letter-spacing: 3px;
+    color: var(--muted); margin: 1.4em 0 .8em; display: flex; align-items: center; gap: 12px;
+  }
+  .page-mark:first-child { margin-top: 0; }
+  .page-mark::after {
+    content: ""; flex: 1; height: 4px; opacity: .6;
+    background: repeating-linear-gradient(90deg, var(--edge) 0 4px, transparent 4px 12px);
+  }
+  .s { cursor: pointer; color: #dcd7ff; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+  .s:hover { color: #fff; background: rgba(127, 224, 255, .12); }
+  .s.read { color: var(--muted); }
+  .s.active { background: var(--gold); color: var(--night); box-shadow: 0 0 0 3px var(--gold); }
+
+  button:focus-visible, select:focus-visible, input:focus-visible, .drop:focus-visible {
+    outline: 3px solid var(--cyan); outline-offset: 7px;
+  }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  @media (max-width: 560px) {
+    body { font-size: 20px; }
+    .player { padding: 18px 14px; }
+    .settings { grid-template-columns: 1fr; }
+    .transport { gap: 8px; }
+    .btn.icon { width: 48px; height: 48px; }
+    .btn.play { width: 66px; height: 66px; }
+    .drop-main { font-size: 20px; }
+    .reader { padding: 18px 16px; font-size: 22px; }
+    h1 { gap: 16px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pstar { animation: none; }
+  }
+</style>
+</head>
+<body>
+  <canvas id="sky" aria-hidden="true"></canvas>
+
+  <main class="wrap">
+    <header>
+      <h1><span class="pstar lg" aria-hidden="true"></span>Doc 2 Audio</h1>
+      <p class="tag">Drop a document into the night sky and let the stars read it to you.</p>
+    </header>
+
+    <label id="drop" class="panel pix drop" for="file" tabindex="0">
+      <input id="file" class="sr-only" type="file" tabindex="-1"
+        accept=".pdf,.docx,.txt,.md,.markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown">
+      <span class="pstar" aria-hidden="true"></span>
+      <span class="drop-main" id="dropMain">DROP A DOCUMENT</span>
+      <span class="drop-sub">or tap to choose · PDF · DOCX · TXT · MD</span>
+    </label>
+
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+
+    <section id="player" class="panel pix player" hidden>
+      <div class="cons-head">
+        <div>
+          <div class="label">CONSTELLATION</div>
+          <h2 id="docTitle"></h2>
+          <div id="docStats" class="meta"></div>
+        </div>
+      </div>
+
+      <canvas id="cons" role="img" aria-label="Reading progress shown as a constellation. Each star is a part of the document; click one to jump there."></canvas>
+      <div class="meta-row"><span id="pos"></span><span id="eta"></span></div>
+
+      <div class="transport">
+        <button id="prev" class="btn pix icon" aria-label="Previous sentence" title="Previous">
+          <svg viewBox="0 0 9 9"><rect x="1" y="1" width="1" height="7"/><rect x="3" y="4" width="1" height="1"/><rect x="4" y="3" width="1" height="3"/><rect x="5" y="2" width="1" height="5"/><rect x="6" y="1" width="1" height="7"/></svg>
+        </button>
+        <button id="play" class="btn pix icon play" aria-label="Play" title="Play"></button>
+        <button id="next" class="btn pix icon" aria-label="Next sentence" title="Next">
+          <svg viewBox="0 0 9 9"><rect x="2" y="1" width="1" height="7"/><rect x="3" y="2" width="1" height="5"/><rect x="4" y="3" width="1" height="3"/><rect x="5" y="4" width="1" height="1"/><rect x="7" y="1" width="1" height="7"/></svg>
+        </button>
+        <button id="stop" class="btn pix icon" aria-label="Stop" title="Stop">
+          <svg viewBox="0 0 9 9"><rect x="2" y="2" width="5" height="5"/></svg>
+        </button>
+      </div>
+
+      <div class="settings">
+        <label class="field full">
+          <span>VOICE</span>
+          <div class="select-wrap pix"><select id="voice"></select></div>
+        </label>
+        <label class="field">
+          <span>SPEED <output id="rateOut">1.0x</output></span>
+          <input id="rate" type="range" min="0.5" max="2.5" step="0.1" value="1">
+        </label>
+        <label class="field">
+          <span>PITCH <output id="pitchOut">1.0</output></span>
+          <input id="pitch" type="range" min="0.5" max="1.5" step="0.1" value="1">
+        </label>
+        <label class="check"><input id="follow" class="pix" type="checkbox" checked> Follow along</label>
+        <div style="display:flex;justify-content:flex-end;align-items:end">
+          <button id="newFile" class="btn pix">NEW FILE</button>
+        </div>
+      </div>
+    </section>
+
+    <article id="reader" class="panel pix reader" hidden></article>
+  </main>
+
+<script>
+(() => {
+  "use strict";
+
+  const $ = (id) => document.getElementById(id);
+  const reduceMotion = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const els = {
+    drop: $("drop"), file: $("file"), status: $("status"), player: $("player"), reader: $("reader"),
+    title: $("docTitle"), stats: $("docStats"), pos: $("pos"), eta: $("eta"),
+    play: $("play"), prev: $("prev"), next: $("next"), stop: $("stop"),
+    voice: $("voice"), rate: $("rate"), rateOut: $("rateOut"), pitch: $("pitch"), pitchOut: $("pitchOut"),
+    follow: $("follow"), newFile: $("newFile"), dropMain: $("dropMain"),
+  };
+
+  const ICON_PLAY = '<svg viewBox="0 0 9 9"><rect x="3" y="1" width="1" height="7"/><rect x="4" y="2" width="1" height="5"/><rect x="5" y="3" width="1" height="3"/><rect x="6" y="4" width="1" height="1"/></svg>';
+  const ICON_PAUSE = '<svg viewBox="0 0 9 9"><rect x="2" y="1" width="2" height="7"/><rect x="5" y="1" width="2" height="7"/></svg>';
+
+  const store = {
+    get(k, d = null) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage unavailable */ } },
+  };
+
+  function setStatus(msg, isError = false) {
+    els.status.textContent = msg;
+    els.status.classList.toggle("error", isError);
+  }
+  window.addEventListener("error", (e) => setStatus("Something went wrong: " + (e.message || "unknown error"), true));
+  window.addEventListener("unhandledrejection", (e) => setStatus("Something went wrong: " + ((e.reason && e.reason.message) || e.reason), true));
+
+  // Small seeded random generator so the sky and constellations are stable
+  function seeded(seed) {
+    return () => {
+      seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+  function hexToRgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+
+  // =====================================================================
+  //  THE NIGHT SKY (pixel canvas)
+  // =====================================================================
+  const sky = $("sky");
+  const sctx = sky.getContext("2d");
+  const PX = 3;
+  const SKY = ["#04030d", "#070618", "#0b0926", "#110d35", "#1a1244", "#26174f", "#371c5a", "#4a2160"];
+  const BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
+  const STAR_COLORS = ["#ffffff", "#fff4d6", "#cfe6ff", "#ffd9a8", "#e6dcff"];
+  const PERSON = [
+    "..###..",
+    ".#####.",
+    ".#####.",
+    "..###..",
+    "...#...",
+    ".#####.",
+    "#######",
+    "#.###.#",
+    "#.###.#",
+    "..###..",
+    ".##.##.",
+    ".#...#.",
+    ".#...#.",
+  ];
+  let SW = 0, SH = 0, layer = null, twinkles = [], shooting = null, nextShoot = 2500;
+
+  function pixCircle(c, cx, cy, r) {
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      if (dx * dx + dy * dy <= r * r + r * 0.6) c.fillRect(cx + dx, cy + dy, 1, 1);
+    }
+  }
+
+  function buildSky() {
+    SW = Math.ceil(window.innerWidth / PX);
+    SH = Math.ceil(window.innerHeight / PX);
+    sky.width = SW; sky.height = SH;
+    layer = document.createElement("canvas");
+    layer.width = SW; layer.height = SH;
+    const c = layer.getContext("2d");
+    const rnd = seeded(7);
+
+    // Dithered gradient sky
+    const img = c.createImageData(SW, SH);
+    const pal = SKY.map(hexToRgb);
+    for (let y = 0; y < SH; y++) {
+      const t = (y / Math.max(1, SH - 1)) * (pal.length - 1);
+      const i = Math.floor(t), f = t - i;
+      for (let x = 0; x < SW; x++) {
+        const th = (BAYER[y & 3][x & 3] + 0.5) / 16;
+        const col = pal[Math.min(i + (f > th ? 1 : 0), pal.length - 1)];
+        const o = (y * SW + x) * 4;
+        img.data[o] = col[0]; img.data[o + 1] = col[1]; img.data[o + 2] = col[2]; img.data[o + 3] = 255;
+      }
+    }
+    c.putImageData(img, 0, 0);
+
+    // Milky way haze
+    const haze = Math.floor(SW * SH * 0.025);
+    for (let k = 0; k < haze; k++) {
+      const x = Math.floor(rnd() * SW);
+      const yc = SH * 0.08 + (x / SW) * SH * 0.42;
+      const y = Math.floor(yc + (rnd() + rnd() + rnd() - 1.5) * SH * 0.1);
+      c.fillStyle = `rgba(190,175,255,${(0.04 + rnd() * 0.12).toFixed(3)})`;
+      c.fillRect(x, y, 1, 1);
+    }
+    // Faint static stars
+    const faint = Math.floor(SW * SH * 0.006);
+    for (let k = 0; k < faint; k++) {
+      c.fillStyle = `rgba(255,255,255,${(0.12 + rnd() * 0.25).toFixed(3)})`;
+      c.fillRect(Math.floor(rnd() * SW), Math.floor(rnd() * SH * 0.85), 1, 1);
+    }
+
+    // Moon with glow and craters
+    const mr = Math.max(6, Math.round(Math.min(SW, SH) * 0.05));
+    const mx = Math.round(SW * 0.84), my = Math.round(SH * 0.15);
+    c.fillStyle = "rgba(255,240,200,0.04)"; pixCircle(c, mx, my, mr + 7);
+    c.fillStyle = "rgba(255,240,200,0.06)"; pixCircle(c, mx, my, mr + 4);
+    c.fillStyle = "rgba(255,240,200,0.10)"; pixCircle(c, mx, my, mr + 2);
+    c.fillStyle = "#f4ecd0"; pixCircle(c, mx, my, mr);
+    c.fillStyle = "#ddd2ae";
+    for (let dy = -mr; dy <= mr; dy++) for (let dx = -mr; dx <= mr; dx++) {
+      if (dx * dx + dy * dy <= mr * mr + mr * 0.6 && dx + dy > mr * 0.55) c.fillRect(mx + dx, my + dy, 1, 1);
+    }
+    c.fillStyle = "#cfc39c";
+    pixCircle(c, mx - Math.round(mr * 0.35), my - Math.round(mr * 0.2), Math.max(1, Math.round(mr * 0.22)));
+    pixCircle(c, mx + Math.round(mr * 0.3), my + Math.round(mr * 0.35), Math.max(1, Math.round(mr * 0.15)));
+    c.fillRect(mx + Math.round(mr * 0.2), my - Math.round(mr * 0.5), 2, 1);
+
+    // Hills
+    const amp = Math.max(4, SH * 0.035);
+    const farBase = SH * 0.86, nearBase = SH * 0.935;
+    c.fillStyle = "#130d33";
+    for (let x = 0; x < SW; x++) {
+      const h = farBase - (Math.sin(x * 0.012) * amp + Math.sin(x * 0.033 + 1.3) * amp * 0.45 + Math.sin(x * 0.006 + 2) * amp * 0.9);
+      c.fillRect(x, Math.round(h), 1, SH);
+    }
+    const fx = Math.max(14, Math.round(SW * 0.16));
+    const nearH = (x) => nearBase - (Math.sin(x * 0.019 + 3) * amp * 0.5 + Math.sin(x * 0.007) * amp * 0.7)
+      - amp * 1.4 * Math.exp(-Math.pow((x - fx) / 22, 2));
+    c.fillStyle = "#07051a";
+    for (let x = 0; x < SW; x++) c.fillRect(x, Math.round(nearH(x)), 1, SH);
+
+    // Stargazer with a telescope
+    const top = Math.round(nearH(fx));
+    const ox = fx - 3, oy = top - PERSON.length;
+    PERSON.forEach((row, ry) => {
+      for (let rx = 0; rx < row.length; rx++) if (row[rx] === "#") c.fillRect(ox + rx, oy + ry, 1, 1);
+    });
+    // rim light from the moon on the head
+    c.fillStyle = "rgba(255,236,190,0.35)";
+    c.fillRect(ox + 4, oy, 1, 1); c.fillRect(ox + 5, oy + 1, 1, 2);
+    // telescope: tube pointing up at the sky + tripod
+    c.fillStyle = "#07051a";
+    const tx = fx + 6, ty = top - 9;
+    for (let i = 0; i < 8; i++) { c.fillRect(tx + i, ty - Math.round(i * 0.8), 2, 2); }
+    c.fillRect(tx + 1, ty + 1, 1, 8); c.fillRect(tx - 1, ty + 5, 1, 4); c.fillRect(tx + 3, ty + 5, 1, 4);
+    c.fillStyle = "rgba(255,236,190,0.5)"; c.fillRect(tx + 8, ty - 7, 1, 1);
+
+    // Twinkling stars (upper sky only)
+    twinkles = [];
+    const n = Math.floor(SW * SH * 0.0022);
+    for (let k = 0; k < n; k++) {
+      twinkles.push({
+        x: Math.floor(rnd() * SW), y: Math.floor(rnd() * SH * 0.74),
+        big: rnd() < 0.14, ph: rnd() * Math.PI * 2, sp: 0.4 + rnd() * 1.8,
+        col: STAR_COLORS[Math.floor(rnd() * STAR_COLORS.length)],
+      });
+    }
+  }
+
+  function drawSky(t) {
+    sctx.globalAlpha = 1;
+    sctx.drawImage(layer, 0, 0);
+    for (const s of twinkles) {
+      const a = reduceMotion ? 0.85 : 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(t * 0.001 * s.sp + s.ph));
+      sctx.fillStyle = s.col;
+      sctx.globalAlpha = a;
+      sctx.fillRect(s.x, s.y, 1, 1);
+      if (s.big) {
+        sctx.globalAlpha = a * 0.55;
+        sctx.fillRect(s.x - 1, s.y, 1, 1); sctx.fillRect(s.x + 1, s.y, 1, 1);
+        sctx.fillRect(s.x, s.y - 1, 1, 1); sctx.fillRect(s.x, s.y + 1, 1, 1);
+        if (a > 0.9) {
+          sctx.globalAlpha = (a - 0.9) * 3;
+          sctx.fillRect(s.x - 2, s.y, 1, 1); sctx.fillRect(s.x + 2, s.y, 1, 1);
+          sctx.fillRect(s.x, s.y - 2, 1, 1); sctx.fillRect(s.x, s.y + 2, 1, 1);
+        }
+      }
+    }
+    // Shooting star
+    if (!reduceMotion) {
+      if (!shooting && t > nextShoot) {
+        const r = Math.random;
+        shooting = { x: SW * (0.35 + r() * 0.6), y: SH * r() * 0.3, vx: -(1.3 + r() * 1.2), vy: 0.55 + r() * 0.5 };
+        nextShoot = t + 6000 + r() * 9000;
+      }
+      if (shooting) {
+        shooting.x += shooting.vx; shooting.y += shooting.vy;
+        sctx.fillStyle = "#fff8e6";
+        for (let i = 0; i < 14; i++) {
+          sctx.globalAlpha = Math.max(0, 1 - i / 14);
+          sctx.fillRect(Math.round(shooting.x - shooting.vx * i * 0.8), Math.round(shooting.y - shooting.vy * i * 0.8), 1, 1);
+        }
+        if (shooting.x < -20 || shooting.y > SH * 0.72) shooting = null;
+      }
+    }
+    sctx.globalAlpha = 1;
+  }
+
+  // =====================================================================
+  //  CONSTELLATION (reading progress)
+  // =====================================================================
+  const CP = 3;
+  const cons = { canvas: $("cons"), pts: [], starts: [], dust: [], S: 0, W: 0, H: 0, hover: -1 };
+  cons.ctx = cons.canvas.getContext("2d");
+
+  function layoutCons() {
+    const n = state.chunks.length;
+    if (!n || els.player.hidden) return;
+    const cssW = cons.canvas.clientWidth || 600;
+    const W = Math.max(60, Math.floor(cssW / CP));
+    const perRow = Math.max(5, Math.floor(cssW / 46));
+    const S = Math.max(1, Math.min(n, perRow * 3, 32));
+    const rows = Math.ceil(S / perRow);
+    const cols = Math.min(perRow, S);
+    const band = 26;
+    const H = rows * band + 8;
+    cons.canvas.width = W; cons.canvas.height = H;
+    cons.canvas.style.height = H * CP + "px";
+
+    const rnd = seeded(hashStr(state.fileName || "doc"));
+    const cellW = (W - 14) / cols;
+    cons.pts = [];
+    for (let k = 0; k < S; k++) {
+      const row = Math.floor(k / perRow), c = k % perRow;
+      const col = row % 2 === 0 ? c : cols - 1 - c;
+      cons.pts.push({
+        x: Math.round(7 + cellW * (col + 0.5) + (rnd() - 0.5) * cellW * 0.45),
+        y: Math.round(5 + row * band + band * 0.15 + rnd() * band * 0.6),
+      });
+    }
+    cons.starts = Array.from({ length: S + 1 }, (_, k) => Math.floor((k * n) / S));
+    cons.dust = Array.from({ length: Math.floor((W * H) / 70) }, () => ({
+      x: Math.floor(rnd() * W), y: Math.floor(rnd() * H), a: 0.08 + rnd() * 0.25,
+    }));
+    cons.S = S; cons.W = W; cons.H = H;
+  }
+
+  function segOf(i) {
+    let k = 0;
+    while (k < cons.S - 1 && cons.starts[k + 1] <= i) k++;
+    return k;
+  }
+
+  function line(ctx, x0, y0, x1, y1, litFrac) {
+    const pts = [];
+    let dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1, err = dx + dy;
+    for (;;) {
+      pts.push([x0, y0]);
+      if (x0 === x1 && y0 === y1) break;
+      const e2 = 2 * err;
+      if (e2 >= dy) { err += dy; x0 += sx; }
+      if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+    const len = pts.length;
+    for (let i = 2; i < len - 2; i++) {
+      if (i / len < litFrac) { ctx.globalAlpha = 0.85; ctx.fillStyle = "#7fe0ff"; ctx.fillRect(pts[i][0], pts[i][1], 1, 1); }
+      else if (i % 3 === 0) { ctx.globalAlpha = 0.7; ctx.fillStyle = "#4d44a6"; ctx.fillRect(pts[i][0], pts[i][1], 1, 1); }
+    }
+  }
+
+  function cross(ctx, x, y, arm, center, armCol) {
+    ctx.fillStyle = armCol;
+    for (let i = 1; i <= arm; i++) {
+      ctx.fillRect(x - i, y, 1, 1); ctx.fillRect(x + i, y, 1, 1);
+      ctx.fillRect(x, y - i, 1, 1); ctx.fillRect(x, y + i, 1, 1);
+    }
+    ctx.fillStyle = center; ctx.fillRect(x, y, 1, 1);
+  }
+
+  function drawCons(t) {
+    if (!cons.S) return;
+    const ctx = cons.ctx, P = cons.pts;
+    ctx.clearRect(0, 0, cons.W, cons.H);
+    ctx.fillStyle = "#c9c2ff";
+    for (const d of cons.dust) { ctx.globalAlpha = d.a; ctx.fillRect(d.x, d.y, 1, 1); }
+
+    const cur = state.finished ? cons.S : segOf(state.idx);
+    const s0 = cons.starts[cur], s1 = cons.starts[cur + 1];
+    const frac = state.finished ? 1 : (state.idx - s0 + (state.playing ? 0.5 : 0)) / Math.max(1, s1 - s0);
+
+    for (let k = 0; k < cons.S - 1; k++) {
+      line(ctx, P[k].x, P[k].y, P[k + 1].x, P[k + 1].y, k < cur ? 1 : k === cur ? frac : 0);
+    }
+    const pulse = reduceMotion ? 1 : 0.5 + 0.5 * Math.sin(t / 240);
+    for (let k = 0; k < cons.S; k++) {
+      const { x, y } = P[k];
+      if (k === cur) {
+        ctx.globalAlpha = 0.14 + pulse * 0.1; ctx.fillStyle = "#ffcf5a"; ctx.fillRect(x - 3, y - 3, 7, 7);
+        ctx.globalAlpha = 1; cross(ctx, x, y, 2, "#ffffff", "#ffcf5a");
+        if (pulse > 0.5) {
+          ctx.globalAlpha = (pulse - 0.5) * 1.6; ctx.fillStyle = "#fff1c2";
+          ctx.fillRect(x - 2, y - 2, 1, 1); ctx.fillRect(x + 2, y - 2, 1, 1);
+          ctx.fillRect(x - 2, y + 2, 1, 1); ctx.fillRect(x + 2, y + 2, 1, 1);
+          ctx.fillRect(x - 3, y, 1, 1); ctx.fillRect(x + 3, y, 1, 1);
+          ctx.fillRect(x, y - 3, 1, 1); ctx.fillRect(x, y + 3, 1, 1);
+        }
+      } else if (k < cur) {
+        ctx.globalAlpha = 1; cross(ctx, x, y, 1, "#ffffff", "#bfe9ff");
+      } else {
+        ctx.globalAlpha = reduceMotion ? 0.75 : 0.5 + 0.4 * (0.5 + 0.5 * Math.sin(t / 650 + k * 1.7));
+        cross(ctx, x, y, 1, "#d6d0ff", "#5a50b0");
+      }
+      if (k === cons.hover && k !== cur) {
+        ctx.globalAlpha = 0.9; cross(ctx, x, y, 2, "#ffffff", "#7fe0ff");
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function consHit(e) {
+    const r = cons.canvas.getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width) * cons.W;
+    const y = ((e.clientY - r.top) / r.height) * cons.H;
+    let best = -1, bd = 49;
+    cons.pts.forEach((p, k) => { const d = (p.x - x) ** 2 + (p.y - y) ** 2; if (d < bd) { bd = d; best = k; } });
+    return best;
+  }
+  cons.canvas.addEventListener("pointermove", (e) => {
+    cons.hover = consHit(e);
+    cons.canvas.style.cursor = cons.hover >= 0 ? "pointer" : "default";
+    cons.canvas.title = cons.hover >= 0 ? `Jump to star ${cons.hover + 1} of ${cons.S}` : "";
+  });
+  cons.canvas.addEventListener("pointerleave", () => { cons.hover = -1; });
+  cons.canvas.addEventListener("click", (e) => {
+    const k = consHit(e);
+    if (k >= 0) speak(cons.starts[k]);
+  });
+
+  // One animation loop for sky + constellation
+  function frame(t) {
+    drawSky(t);
+    if (!els.player.hidden) drawCons(t);
+    requestAnimationFrame(frame);
+  }
+
+  // =====================================================================
+  //  DOCUMENT LOADING
+  // =====================================================================
+  const LIBS = {
+    pdf: {
+      global: "pdfjsLib",
+      urls: [
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js",
+        "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js",
+        "https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js",
+      ],
+    },
+    docx: {
+      global: "mammoth",
+      urls: [
+        "https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js",
+        "https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js",
+        "https://unpkg.com/mammoth@1.6.0/mammoth.browser.min.js",
+      ],
+    },
+  };
+  const libPromises = {};
+
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = src; s.async = true;
+      s.onload = () => resolve(src);
+      s.onerror = () => { s.remove(); reject(new Error("failed " + src)); };
+      document.head.appendChild(s);
+    });
+  }
+
+  function loadLib(name) {
+    const lib = LIBS[name];
+    if (window[lib.global]) return Promise.resolve();
+    if (!libPromises[name]) {
+      libPromises[name] = (async () => {
+        for (const url of lib.urls) {
+          try {
+            await loadScript(url);
+            if (window[lib.global]) {
+              if (name === "pdf") window.pdfjsLib.GlobalWorkerOptions.workerSrc = url.replace(/pdf\.min\.js$/, "pdf.worker.min.js");
+              return;
+            }
+          } catch { /* try next mirror */ }
+        }
+        libPromises[name] = null;
+        throw new Error(`Couldn't load the ${name === "pdf" ? "PDF" : "Word"} reader. Check your internet connection and try again.`);
+      })();
+    }
+    return libPromises[name];
+  }
+
+  async function extractPdf(file) {
+    await loadLib("pdf");
+    const data = new Uint8Array(await file.arrayBuffer());
+    const pdf = await window.pdfjsLib.getDocument({ data }).promise;
+    const pages = [];
+    for (let p = 1; p <= pdf.numPages; p++) {
+      setStatus(`Charting the stars... page ${p} of ${pdf.numPages}`);
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      let out = "", lastY = null;
+      for (const item of content.items) {
+        if (!("str" in item)) continue;
+        const y = item.transform ? item.transform[5] : null;
+        if (lastY !== null && y !== null && Math.abs(y - lastY) > 2 && !out.endsWith("\n")) out += "\n";
+        out += item.str;
+        if (item.hasEOL) out += "\n";
+        lastY = y;
+      }
+      pages.push(out);
+    }
+    return { text: pages.map((t, i) => `\f${i + 1}\n${t}`).join("\n\n"), pages: pdf.numPages };
+  }
+
+  async function extractDocx(file) {
+    await loadLib("docx");
+    const result = await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+    return { text: result.value };
+  }
+
+  async function extractPlain(file) {
+    let text = await file.text();
+    if (/\.(md|markdown)$/i.test(file.name)) text = stripMarkdown(text);
+    return { text };
+  }
+
+  function stripMarkdown(md) {
+    return md
+      .replace(/```[\s\S]*?```/g, "")
+      .replace(/`([^`]+)`/g, "$1")
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+      .replace(/^\s{0,3}#{1,6}\s+(.*)$/gm, "$1.")
+      .replace(/^\s*[-*+]\s+/gm, "")
+      .replace(/^\s*>\s?/gm, "")
+      .replace(/(\*\*|__|\*|_|~~)(.*?)\1/g, "$2");
+  }
+
+  function cleanText(raw) {
+    return raw
+      .replace(/\r\n?/g, "\n")
+      .replace(/­/g, "")
+      .replace(/(\w)-\n(\w)/g, "$1$2")
+      .replace(/[ \t]+/g, " ")
+      .replace(/([^\n.!?:;])\n(?!\n|\f)/g, "$1 ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  // ---------- sentence chunking ----------
+  const MAX_CHUNK = 260;
+  function splitSentences(paragraph) {
+    const parts = paragraph.match(/[^.!?…]+(?:[.!?…]+["'”’)\]]*|$)\s*/g) || [paragraph];
+    const out = [];
+    let buf = "";
+    for (let s of parts) {
+      s = s.trim();
+      if (!s) continue;
+      if ((buf + " " + s).length < 60 || /\b(Mr|Mrs|Ms|Dr|Prof|St|vs|etc|e\.g|i\.e|Fig|No)\.$/i.test(buf)) {
+        buf = buf ? `${buf} ${s}` : s;
+        continue;
+      }
+      if (buf) out.push(buf);
+      buf = s;
+    }
+    if (buf) out.push(buf);
+    return out.flatMap(splitLong);
+  }
+  function splitLong(s) {
+    if (s.length <= MAX_CHUNK) return [s];
+    const out = [];
+    let rest = s;
+    while (rest.length > MAX_CHUNK) {
+      let cut = Math.max(rest.lastIndexOf(", ", MAX_CHUNK), rest.lastIndexOf("; ", MAX_CHUNK));
+      if (cut < MAX_CHUNK * 0.4) cut = rest.lastIndexOf(" ", MAX_CHUNK);
+      if (cut <= 0) cut = MAX_CHUNK;
+      out.push(rest.slice(0, cut + 1).trim());
+      rest = rest.slice(cut + 1).trim();
+    }
+    if (rest) out.push(rest);
+    return out;
+  }
+
+  // =====================================================================
+  //  READER + SPEECH
+  // =====================================================================
+  const synth = window.speechSynthesis;
+  const WPM = 165;
+  const state = { fileName: "", chunks: [], spans: [], idx: 0, playing: false, token: 0, voices: [], lastHL: -1 };
+
+  function render(text) {
+    els.reader.innerHTML = "";
+    state.chunks = []; state.spans = []; state.lastHL = -1;
+    const frag = document.createDocumentFragment();
+    for (const block of text.split(/\n{2,}/)) {
+      let b = block;
+      const pm = b.match(/^\f(\d+)\n?/);
+      if (pm) {
+        const mark = document.createElement("div");
+        mark.className = "page-mark";
+        mark.textContent = `PAGE ${pm[1]}`;
+        frag.appendChild(mark);
+        b = b.slice(pm[0].length);
+      }
+      b = b.replace(/\s+/g, " ").trim();
+      if (!b) continue;
+      const p = document.createElement("p");
+      for (const sentence of splitSentences(b)) {
+        const span = document.createElement("span");
+        span.className = "s";
+        span.dataset.i = state.chunks.length;
+        span.textContent = sentence + " ";
+        p.appendChild(span);
+        state.chunks.push(sentence);
+        state.spans.push(span);
+      }
+      frag.appendChild(p);
+    }
+    els.reader.appendChild(frag);
+  }
+
+  function currentVoice() { return state.voices.find((v) => v.voiceURI === els.voice.value) || null; }
+
+  function speak(i) {
+    if (!synth) return;
+    if (i < 0 || i >= state.chunks.length) { finish(); return; }
+    const busy = synth.speaking || synth.pending;
+    synth.cancel();
+    state.idx = i;
+    state.playing = true;
+    const token = ++state.token;
+    state.finished = false;
+    highlight(i);
+    updatePlay();
+    setStatus("");
+
+    const u = new SpeechSynthesisUtterance(state.chunks[i]);
+    const v = currentVoice();
+    if (v) { u.voice = v; u.lang = v.lang; }
+    u.rate = parseFloat(els.rate.value);
+    u.pitch = parseFloat(els.pitch.value);
+    u.onend = () => { if (token === state.token && state.playing) speak(state.idx + 1); };
+    u.onerror = (e) => {
+      if (e.error === "interrupted" || e.error === "canceled") return;
+      if (token !== state.token) return;
+      pause();
+      setStatus(e.error === "not-allowed"
+        ? "Tap play to start the voice."
+        : "The voice stopped unexpectedly. Try another voice, or press play again.", true);
+    };
+    // Speaking right away keeps mobile browsers happy (needs the tap gesture);
+    // after a cancel, some browsers need a short breath first.
+    if (busy) setTimeout(() => { if (token === state.token) synth.speak(u); }, 40);
+    else synth.speak(u);
+  }
+
+  function pause() {
+    state.playing = false;
+    state.token++;
+    if (synth) synth.cancel();
+    updatePlay();
+  }
+  function stop() { pause(); state.idx = 0; highlight(0); }
+  function finish() {
+    state.playing = false; state.token++; updatePlay();
+    state.finished = true;
+    state.spans.forEach((s) => { s.classList.add("read"); s.classList.remove("active"); });
+    state.lastHL = -1;
+    state.idx = state.chunks.length - 1;
+    if (state.fileName) store.set(posKey(), 0);
+    setStatus("The end. Every star is lit. Press play to hear it again.");
+  }
+  function toggle() {
+    if (!state.chunks.length) return;
+    if (state.playing) { pause(); return; }
+    speak(state.finished ? 0 : state.idx);
+  }
+  function restartIfPlaying() { if (state.playing) speak(state.idx); }
+
+  function updatePlay() {
+    els.play.innerHTML = state.playing ? ICON_PAUSE : ICON_PLAY;
+    els.play.setAttribute("aria-label", state.playing ? "Pause" : "Play");
+    els.play.title = state.playing ? "Pause" : "Play";
+  }
+
+  function highlight(i) {
+    const spans = state.spans;
+    if (!spans.length) return;
+    const a = state.lastHL < 0 ? 0 : Math.min(state.lastHL, i);
+    const b = state.lastHL < 0 ? spans.length - 1 : Math.max(state.lastHL, i);
+    for (let k = a; k <= b; k++) {
+      spans[k].classList.toggle("read", k < i);
+      spans[k].classList.toggle("active", k === i);
+    }
+    state.lastHL = i;
+    const span = spans[i];
+    if (span && els.follow.checked && !els.reader.hidden) {
+      const r = els.reader;
+      const top = span.getBoundingClientRect().top - r.getBoundingClientRect().top + r.scrollTop - r.clientHeight / 2 + span.offsetHeight / 2;
+      r.scrollTo({ top: Math.max(0, top), behavior: reduceMotion ? "auto" : "smooth" });
+    }
+    const seg = segOf(i);
+    els.pos.textContent = `STAR ${seg + 1} OF ${cons.S || 1}`;
+    els.pos.title = `Sentence ${i + 1} of ${state.chunks.length}`;
+    els.eta.textContent = remaining(i);
+    savePos();
+  }
+
+  function remaining(i) {
+    let words = 0;
+    for (let k = i; k < state.chunks.length; k++) words += state.chunks[k].split(/\s+/).length;
+    const mins = words / (WPM * parseFloat(els.rate.value));
+    if (mins < 1) return "< 1 MIN LEFT";
+    const h = Math.floor(mins / 60), m = Math.round(mins % 60);
+    return h ? `${h}H ${m}M LEFT` : `${m} MIN LEFT`;
+  }
+
+  // voices
+  function loadVoices() {
+    const list = synth.getVoices();
+    if (!list.length) return;
+    state.voices = list.slice().sort((a, b) => a.lang.localeCompare(b.lang) || a.name.localeCompare(b.name));
+    const saved = store.get("d2a.voice");
+    const lang = (navigator.language || "en").slice(0, 2);
+    els.voice.innerHTML = "";
+    for (const v of state.voices) {
+      const o = document.createElement("option");
+      o.value = v.voiceURI;
+      o.textContent = `${v.name} (${v.lang})`;
+      els.voice.appendChild(o);
+    }
+    const pick = state.voices.find((v) => v.voiceURI === saved)
+      || state.voices.find((v) => v.default && v.lang.startsWith(lang))
+      || state.voices.find((v) => v.lang.startsWith(lang))
+      || state.voices[0];
+    if (pick) els.voice.value = pick.voiceURI;
+  }
+
+  function posKey() { return `d2a.pos.${state.fileName}.${state.chunks.length}`; }
+  function savePos() { if (state.fileName && !state.finished) store.set(posKey(), state.idx); }
+
+  async function handleFile(file) {
+    if (!file) return;
+    pause();
+    const name = file.name || "document";
+    const ext = (name.split(".").pop() || "").toLowerCase();
+    setStatus(`Charting the stars in "${name}"...`);
+    els.drop.setAttribute("aria-busy", "true");
+    try {
+      let result;
+      if (ext === "pdf" || file.type === "application/pdf") result = await extractPdf(file);
+      else if (ext === "docx") result = await extractDocx(file);
+      else if (["txt", "md", "markdown"].includes(ext) || (file.type || "").startsWith("text/")) result = await extractPlain(file);
+      else if (ext === "doc") throw new Error("Old .doc files aren't supported. Save it as .docx or PDF first.");
+      else throw new Error(`Can't read .${ext} files. Try a PDF, DOCX, TXT or MD file.`);
+
+      const text = cleanText(result.text);
+      const plain = text.replace(/\f\d+\n?/g, "");
+      if (plain.replace(/\s/g, "").length < 2) {
+        throw new Error("No readable text found. If this is a scanned PDF, it's only pictures of text.");
+      }
+
+      state.fileName = name;
+      state.finished = false;
+      render(text);
+
+      const words = plain.split(/\s+/).filter(Boolean).length;
+      els.title.textContent = name.replace(/\.[^.]+$/, "").toUpperCase();
+      els.stats.textContent = `${words.toLocaleString()} words${result.pages ? ` · ${result.pages} pages` : ""} · about ${Math.max(1, Math.round(words / WPM))} min`;
+
+      els.player.hidden = false;
+      els.reader.hidden = false;
+      els.drop.classList.add("compact");
+      els.dropMain.textContent = "DROP ANOTHER DOCUMENT";
+      layoutCons();
+
+      const saved = store.get(posKey(), 0);
+      state.idx = saved > 0 && saved < state.chunks.length ? saved : 0;
+      highlight(state.idx);
+      updatePlay();
+      setStatus(state.idx > 0 ? "Welcome back. Picking up where you left off." : "");
+      if (!state.voices.length && synth && !synth.getVoices().length) {
+        setStatus("This browser has no voices installed, so it may stay silent. Try Chrome, Edge or Safari.", true);
+      }
+      els.player.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+    } catch (err) {
+      console.error(err);
+      setStatus(err.message || "Couldn't read that file.", true);
+    } finally {
+      els.drop.removeAttribute("aria-busy");
+    }
+  }
+
+  // =====================================================================
+  //  EVENTS
+  // =====================================================================
+  els.file.addEventListener("change", () => {
+    const f = els.file.files && els.file.files[0];
+    handleFile(f);
+    els.file.value = "";
+  });
+  els.drop.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); els.file.click(); }
+  });
+
+  // Drop anywhere on the page
+  let dragDepth = 0;
+  window.addEventListener("dragenter", (e) => { e.preventDefault(); dragDepth++; els.drop.classList.add("over"); });
+  window.addEventListener("dragover", (e) => { e.preventDefault(); });
+  window.addEventListener("dragleave", () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) els.drop.classList.remove("over"); });
+  window.addEventListener("drop", (e) => {
+    e.preventDefault(); dragDepth = 0; els.drop.classList.remove("over");
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) handleFile(f);
+  });
+
+  els.play.addEventListener("click", toggle);
+  els.stop.addEventListener("click", stop);
+  els.prev.addEventListener("click", () => {
+    const i = Math.max(0, state.idx - 1);
+    if (state.playing) speak(i); else { state.finished = false; state.idx = i; highlight(i); }
+  });
+  els.next.addEventListener("click", () => {
+    const i = Math.min(state.chunks.length - 1, state.idx + 1);
+    if (state.playing) speak(i); else { state.finished = false; state.idx = i; highlight(i); }
+  });
+  els.newFile.addEventListener("click", () => els.file.click());
+
+  els.reader.addEventListener("click", (e) => {
+    const s = e.target.closest(".s");
+    if (s) speak(parseInt(s.dataset.i, 10));
+  });
+
+  function setFill(input) {
+    const min = +input.min, max = +input.max;
+    input.style.setProperty("--fill", ((input.value - min) / (max - min)) * 100 + "%");
+  }
+  els.rate.addEventListener("input", () => {
+    els.rateOut.textContent = parseFloat(els.rate.value).toFixed(1) + "x";
+    setFill(els.rate);
+    if (state.chunks.length) els.eta.textContent = remaining(state.idx);
+  });
+  els.rate.addEventListener("change", () => { store.set("d2a.rate", els.rate.value); restartIfPlaying(); });
+  els.pitch.addEventListener("input", () => { els.pitchOut.textContent = parseFloat(els.pitch.value).toFixed(1); setFill(els.pitch); });
+  els.pitch.addEventListener("change", () => { store.set("d2a.pitch", els.pitch.value); restartIfPlaying(); });
+  els.voice.addEventListener("change", () => { store.set("d2a.voice", els.voice.value); restartIfPlaying(); });
+
+  document.addEventListener("keydown", (e) => {
+    if (!state.chunks.length) return;
+    const tag = document.activeElement && document.activeElement.tagName;
+    if (tag === "SELECT" || (tag === "INPUT" && document.activeElement.type !== "range") || tag === "BUTTON") return;
+    if (e.code === "Space") { e.preventDefault(); toggle(); }
+    else if (e.code === "ArrowRight" && tag !== "INPUT") { e.preventDefault(); els.next.click(); }
+    else if (e.code === "ArrowLeft" && tag !== "INPUT") { e.preventDefault(); els.prev.click(); }
+  });
+
+  let resizeTimer;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { buildSky(); layoutCons(); }, 120);
+  });
+  window.addEventListener("beforeunload", () => { if (synth) synth.cancel(); });
+
+  // =====================================================================
+  //  INIT
+  // =====================================================================
+  const savedRate = store.get("d2a.rate"), savedPitch = store.get("d2a.pitch");
+  if (savedRate) { els.rate.value = savedRate; els.rateOut.textContent = parseFloat(savedRate).toFixed(1) + "x"; }
+  if (savedPitch) { els.pitch.value = savedPitch; els.pitchOut.textContent = parseFloat(savedPitch).toFixed(1); }
+  setFill(els.rate); setFill(els.pitch);
+  updatePlay();
+
+  if (!synth || !window.SpeechSynthesisUtterance) {
+    setStatus("This browser can't speak text aloud. Try Chrome, Edge or Safari.", true);
+  } else {
+    loadVoices();
+    if ("onvoiceschanged" in synth) synth.onvoiceschanged = loadVoices;
+  }
+
+  buildSky();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
