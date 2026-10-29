@@ -1,7 +1,7 @@
 # Doc-2-Audio
 Turn PDF, Word (.docx), TXT and Markdown documents into audio
 
-🔗 **Live site:** https://YOUR-USERNAME.github.io/YOUR-REPO/
+🔗 **Live site:** [Doc-2-Audio](https://fatima-d09.github.io/Doc-2-Audio/)
 
 ## Two parts:
  
